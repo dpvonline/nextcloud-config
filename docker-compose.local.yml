@@ -1,0 +1,15 @@
+version: '3'
+
+services:
+  phpmyadmin:
+    image: phpmyadmin
+    container_name: nextcloud_phpmyadmin
+    environment:
+      - PMA_HOST=db
+      - VIRTUAL_HOST=phpmyadmin.localhost
+    ports:
+      - 8080:80
+    depends_on:
+      - db
+    networks:
+      - proxy-tier

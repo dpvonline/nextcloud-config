@@ -1,0 +1,4 @@
+.idea
+/venv/
+app.env
+db.env

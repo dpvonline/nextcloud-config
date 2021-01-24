@@ -1,0 +1,130 @@
+version: '3'
+
+services:
+  db:
+    image: mariadb:latest
+    container_name: nextcloud_db
+    command: --transaction-isolation=READ-COMMITTED --binlog-format=ROW
+    restart: unless-stopped
+    volumes:
+      - db:/var/lib/mysql
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+    env_file:
+      - db.env
+    networks:
+      - proxy-tier
+
+  redis:
+    image: redis:alpine
+    container_name: nextcloud_redis
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+    restart: always
+    networks:
+      - proxy-tier
+
+  app:
+    build: ./app
+    container_name: nextcloud_app
+    restart: unless-stopped
+    volumes:
+      - nextcloud-data:/var/www/html
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+    environment:
+      - MYSQL_HOST=db
+      - REDIS_HOST=redis
+    env_file:
+      - app.env
+      - db.env
+    depends_on:
+      - db
+      - redis
+    networks:
+      - proxy-tier
+
+  office:
+    image: collabora/code
+    container_name: nextcloud_office
+    restart: unless-stopped
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+    cap_add:
+      - MKNOD
+    environment:
+      - extra_params=--o:ssl.enable=false --o:ssl.termination=true
+    env_file:
+      - office.env
+    networks:
+      - proxy-tier
+    dns:
+      - 8.8.8.8
+
+
+
+  proxy:
+    build: ./proxy
+    container_name: nextcloud_proxy
+    restart: unless-stopped
+    ports:
+      - 80:80
+      - 443:443
+    volumes:
+      - certs:/etc/nginx/certs:ro
+      - vhost.d:/etc/nginx/vhost.d
+      - html:/usr/share/nginx/html
+      - /var/run/docker.sock:/tmp/docker.sock:ro
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+    networks:
+      - proxy-tier
+
+
+  backup:
+    build: ./backup
+    container_name: nextcloud_backup
+    restart: unless-stopped
+    environment:
+      - MYSQL_HOST=db
+    env_file:
+      - db.env
+      - backup.env
+    volumes:
+      - nextcloud-data:/data/nextcloud/data
+      - backup:/backup/nextcloud
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+    tty: true
+    networks:
+      - proxy-tier
+    depends_on:
+      - db
+      - app
+
+volumes:
+  db:
+    driver_opts:
+      type: none
+      device: /data/nextcloud/db
+      o: bind
+  nextcloud-data:
+    driver_opts:
+      type: none
+      device: /data/nextcloud/data
+      o: bind
+  backup:
+    driver_opts:
+      type: none
+      device: /backup/nextcloud
+      o: bind
+  certs:
+  vhost.d:
+  html:
+  acme:
+
+networks:
+  proxy-tier:
