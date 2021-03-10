@@ -11,6 +11,13 @@ from docker import DockerContainer, DockerUtils
 from logger import logger
 
 
+def get_df_output(path, container: DockerContainer):
+    """Output from df -h tool"""
+    cmd_dfh = "df -h {}".format(path)
+    result = DockerUtils.run_cmd(cmd=cmd_dfh, container=container)
+    return result.decode('utf-8')
+
+
 def get_folder_size_in_bytes(path, container: DockerContainer):
     """disk usage in bytes"""
     cmd_folder_size = "du -s --bytes {}".format(path)
