@@ -16,7 +16,7 @@ from docker import DockerUtils, DockerContainer
 from logger import logger, init_mail
 from params import PARAMS
 from util import init_params, timestamp_string, get_folder_size_in_bytes, get_folder_size_human, str2bool, \
-    check_dir_exist, check_file_exists, check_dir_empty, fix_latest_link
+    check_dir_exist, check_file_exists, check_dir_empty, fix_latest_link, get_df_output
 
 
 class BackupManager(object):
@@ -77,8 +77,8 @@ class BackupManager(object):
             cmd = "rsync -az {source}/ {target}/data".format(source=self._data_dir, target=Path(backup_dir))
         else:
             cmd = "rsync -az {source}/ --link-dest {latest}/data {target}/data".format(source=self._data_dir,
-                                                                                  latest=self._latest_dir,
-                                                                                  target=Path(backup_dir))
+                                                                                       latest=self._latest_dir,
+                                                                                       target=Path(backup_dir))
 
         DockerUtils.run_cmd(cmd=cmd, container=DockerContainer.BACKUP)
 
@@ -197,6 +197,14 @@ class BackupManager(object):
             rotate_backups.RotateBackups(rotation_scheme=rotation_scheme, **options).rotate_backups(location)
         fix_latest_link(self._backup_dir, self._latest_dir, container=DockerContainer.BACKUP)
 
+    def create_summary(self):
+        data_size = get_folder_size_human(self._data_dir, container=DockerContainer.BACKUP)
+        backup_size = get_folder_size_human(self._backup_dir, container=DockerContainer.BACKUP)
+        dfh = get_df_output(self._data_dir, container=DockerContainer.BACKUP)
+        logger.info("Current data size: {data_size}".format(data_size=data_size))
+        logger.info("Current backup size: {backup_size}".format(backup_size=backup_size))
+        logger.info("{dfh}".format(dfh=dfh))
+
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
@@ -250,4 +258,7 @@ if __name__ == "__main__":
     if args.clean:
         backup_manager.clean_backups()
 
+    backup_manager.create_summary()
+
     logging.shutdown()
+    exit(0)
