@@ -7,6 +7,7 @@ import argparse
 import logging
 import os
 import re
+import time
 from pathlib import Path
 
 import rotate_backups
@@ -22,6 +23,7 @@ from util import init_params, timestamp_string, get_folder_size_in_bytes, get_fo
 class BackupManager(object):
     def __init__(self, params):
         self._data_dir = Path(params['DATA_DIR'])
+        self._user_data_dir = Path(params['USER_DATA_DIR'])
         self._backup_dir = Path(params['BACKUP_DIR'])
         self._latest_dir = self._backup_dir.joinpath('latest')
 
@@ -37,6 +39,13 @@ class BackupManager(object):
         DockerUtils.run_cmd(cmd="sudo -u www-data php ./occ maintenance:mode --off",
                             container=DockerContainer.NEXTCLOUD)
 
+    def __shutdown_nexcloud(self):
+        DockerUtils.run_cmd(cmd="docker stop nextcloud_app", container=DockerContainer.LOCAL)
+
+    def __start_nexcloud(self):
+        DockerUtils.run_cmd(cmd="docker start nextcloud_app", container=DockerContainer.LOCAL)
+        time.sleep(10)
+
     def __verify_prior_backup(self):
         # Check if data dir is present and non-empty
         if not check_dir_exist(self._data_dir, container=DockerContainer.BACKUP):
@@ -45,6 +54,14 @@ class BackupManager(object):
 
         if check_dir_empty(self._data_dir, container=DockerContainer.BACKUP):
             logger.error("Data dir empty.")
+            raise
+
+        if not check_dir_exist(self._user_data_dir, container=DockerContainer.BACKUP):
+            logger.error("User data dir not present.")
+            raise
+
+        if check_dir_empty(self._user_data_dir, container=DockerContainer.BACKUP):
+            logger.error("User data dir empty.")
             raise
 
         # Check if backup dir is present and non-empty
@@ -73,13 +90,25 @@ class BackupManager(object):
             logger.error("Can no perform incremental backup. Missing folder {}".format(self._latest_dir))
             incremental = False
 
+        # Nextcloud data
         if not incremental:
-            cmd = "rsync -az {source}/ {target}/data".format(source=self._data_dir, target=Path(backup_dir))
+            cmd = "fpsync -n 32 -o \"-a\" {source}/ {target}/data".format(source=self._data_dir, target=Path(backup_dir))
         else:
-            cmd = "rsync -az {source}/ --link-dest {latest}/data {target}/data".format(source=self._data_dir,
-                                                                                       latest=self._latest_dir,
-                                                                                       target=Path(backup_dir))
+            cmd = "fpsync -n 32 -o \"-a --link-dest {latest}/data\" {source}/ {target}/data".format(source=self._data_dir,
+                                                                                                  latest=self._latest_dir,
+                                                                                                  target=Path(
+                                                                                                      backup_dir))
+        DockerUtils.run_cmd(cmd=cmd, container=DockerContainer.BACKUP)
 
+        # User data
+        if not incremental:
+            cmd = "fpsync -n 32 -o \"-a\" {source}/ {target}/user_data".format(source=self._user_data_dir,
+                                                                             target=Path(backup_dir))
+        else:
+            cmd = "fpsync -n 32 -o \"-a --link-dest {latest}/user_data\" {source}/ {target}/user_data".format(
+                source=self._user_data_dir,
+                latest=self._latest_dir,
+                target=Path(backup_dir))
         DockerUtils.run_cmd(cmd=cmd, container=DockerContainer.BACKUP)
 
         cmd_link = "rm -rf {latest} && ln -s {backup_dir} {latest}".format(backup_dir=backup_dir,
@@ -101,6 +130,15 @@ class BackupManager(object):
 
         if check_dir_empty(data_backup_dir, container=DockerContainer.BACKUP):
             logger.error("Data backup directory {} empty.".format(data_backup_dir))
+            raise
+
+        user_data_backup_dir = "{path}/user_data".format(path=Path(backup_dir))
+        if not check_dir_exist(user_data_backup_dir, container=DockerContainer.BACKUP):
+            logger.error("User data backup directory {} non-existent.".format(data_backup_dir))
+            raise
+
+        if check_dir_empty(user_data_backup_dir, container=DockerContainer.BACKUP):
+            logger.error("User data backup directory {} empty.".format(data_backup_dir))
             raise
 
         backup_size = get_folder_size_in_bytes(data_backup_dir, container=DockerContainer.BACKUP)
@@ -138,11 +176,20 @@ class BackupManager(object):
         DockerUtils.run_cmd(cmd=cmd_restore, container=DockerContainer.BACKUP)
 
     def __restore_data(self, backup_dir: str):
-        cmd = "rsync -az --delete {}/data/ {}".format(Path(backup_dir), self._data_dir)
+        # Nextcloud data
+        cmd = "rsync -az --delete --exclude './data' {}/data/ {}".format(Path(backup_dir), self._data_dir)
+        DockerUtils.run_cmd(cmd=cmd, container=DockerContainer.BACKUP)
+
+        # User data
+        cmd = "rsync -az --delete {}/user_data/ {}".format(Path(backup_dir), self._user_data_dir)
         DockerUtils.run_cmd(cmd=cmd, container=DockerContainer.BACKUP)
 
     def __refresh_fingerprints(self):
         DockerUtils.run_cmd(cmd="sudo -u www-data php ./occ maintenance:data-fingerprint",
+                            container=DockerContainer.NEXTCLOUD)
+
+    def __refresh_files(self):
+        DockerUtils.run_cmd(cmd="sudo -u www-data php ./occ  files:scan --all",
                             container=DockerContainer.NEXTCLOUD)
 
     def __verify_post_restore(self):
@@ -164,18 +211,22 @@ class BackupManager(object):
             return True
 
     def restore_backup(self, backup_dir: str) -> bool:
-        # Backup current state first
-        self.backup()
         logger.info("Start restoring backup from folder {}".format(backup_dir))
         try:
-            self.__activate_maintenance()
+            self.__shutdown_nexcloud()
             self.__verify_prior_restore(backup_dir=backup_dir)
             self.__restore_database(backup_dir=backup_dir)
             self.__restore_data(backup_dir=backup_dir)
-            self.__refresh_fingerprints()
             self.__verify_post_restore()
         finally:
-            self.__deactivate_maintenance()
+            self.__start_nexcloud()
+            try:
+                self.__deactivate_maintenance()
+            except:
+                logger.info("Could not deactivate maintenance mode.")
+
+            self.__refresh_fingerprints()
+            self.__refresh_files()
             logger.info("Finished restoring backup from folder {}".format(backup_dir))
             return True
 
@@ -198,10 +249,12 @@ class BackupManager(object):
         fix_latest_link(self._backup_dir, self._latest_dir, container=DockerContainer.BACKUP)
 
     def create_summary(self):
-        data_size = get_folder_size_human(self._data_dir, container=DockerContainer.BACKUP)
+        nextcloud_data_size = get_folder_size_human(self._data_dir, container=DockerContainer.BACKUP)
+        user_data_size = get_folder_size_human(self._user_data_dir, container=DockerContainer.BACKUP)
         backup_size = get_folder_size_human(self._backup_dir, container=DockerContainer.BACKUP)
         dfh = get_df_output(self._data_dir, container=DockerContainer.BACKUP)
-        logger.info("Current data size: {data_size}".format(data_size=data_size))
+        logger.info("Current nextcloud data size: {data_size}".format(data_size=nextcloud_data_size))
+        logger.info("Current user data size: {data_size}".format(data_size=user_data_size))
         logger.info("Current backup size: {backup_size}".format(backup_size=backup_size))
         logger.info("{dfh}".format(dfh=dfh))
 

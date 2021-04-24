@@ -5,6 +5,7 @@ __license__ = "MIT"
 
 PARAMS = {
     'DATA_DIR': '',
+    'USER_DATA_DIR': '',
     'BACKUP_DIR': '',
     'MYSQL_HOST': '',
     'MYSQL_USER': '',

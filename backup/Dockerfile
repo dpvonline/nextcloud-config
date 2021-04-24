@@ -23,6 +23,7 @@ RUN apt-get --no-install-recommends install -y docker-ce docker-ce-cli container
 RUN apt-get --no-install-recommends install -y rsync mysql-client cron supervisor
 RUN apt-get --no-install-recommends install -y python3 python3-pip python3-setuptools python3-wheel
 RUN apt-get --no-install-recommends install -y nano
+RUN apt-get --no-install-recommends install -y fpart
 
 # Finished installation
 RUN apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false

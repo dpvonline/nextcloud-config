@@ -31,6 +31,7 @@ services:
     restart: unless-stopped
     volumes:
       - nextcloud-data:/var/www/html
+      - nextcloud-user-data:/var/www/html/data
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
     environment:
@@ -44,25 +45,6 @@ services:
       - redis
     networks:
       - proxy-tier
-
-  office:
-    image: collabora/code
-    container_name: nextcloud_office
-    restart: unless-stopped
-    volumes:
-      - /etc/localtime:/etc/localtime:ro
-      - /etc/timezone:/etc/timezone:ro
-    cap_add:
-      - MKNOD
-    environment:
-      - extra_params=--o:ssl.enable=false --o:ssl.termination=true
-    env_file:
-      - office.env
-    networks:
-      - proxy-tier
-    dns:
-      - 8.8.8.8
-
 
 
   proxy:
@@ -94,7 +76,9 @@ services:
       - backup.env
     volumes:
       - nextcloud-data:/data/nextcloud/data
+      - nextcloud-user-data:/data/nextcloud/user_data
       - backup:/backup/nextcloud
+      - ./backup/scripts/rotation.ini:/scripts/rotation.ini
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
@@ -115,6 +99,11 @@ volumes:
     driver_opts:
       type: none
       device: /data/nextcloud/data
+      o: bind
+  nextcloud-user-data:
+    driver_opts:
+      type: none
+      device: /data/nextcloud/user_data
       o: bind
   backup:
     driver_opts:

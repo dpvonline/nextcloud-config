@@ -1,0 +1,20 @@
+version: '3'
+
+services:
+  office:
+    image: collabora/code
+    container_name: nextcloud_office
+    restart: unless-stopped
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+    cap_add:
+      - MKNOD
+    environment:
+      - extra_params=--o:ssl.enable=false --o:ssl.termination=true
+    env_file:
+      - office.env
+    networks:
+      - proxy-tier
+    dns:
+      - 8.8.8.8
