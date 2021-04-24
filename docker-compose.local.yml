@@ -4,11 +4,10 @@ services:
   phpmyadmin:
     image: phpmyadmin
     container_name: nextcloud_phpmyadmin
+    restart: unless-stopped
     environment:
       - PMA_HOST=db
       - VIRTUAL_HOST=phpmyadmin.localhost
-    ports:
-      - 8080:80
     depends_on:
       - db
     networks:
