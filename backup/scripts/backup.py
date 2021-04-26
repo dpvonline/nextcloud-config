@@ -92,18 +92,20 @@ class BackupManager(object):
 
         # Nextcloud data
         if not incremental:
-            cmd = "fpsync -n 32 -o \"-a\" {source}/ {target}/data".format(source=self._data_dir, target=Path(backup_dir))
+            cmd = "fpsync -n 32 -o \"-a\" {source}/ {target}/data".format(source=self._data_dir,
+                                                                          target=Path(backup_dir))
         else:
-            cmd = "fpsync -n 32 -o \"-a --link-dest {latest}/data\" {source}/ {target}/data".format(source=self._data_dir,
-                                                                                                  latest=self._latest_dir,
-                                                                                                  target=Path(
-                                                                                                      backup_dir))
+            cmd = "fpsync -n 32 -o \"-a --link-dest {latest}/data\" {source}/ {target}/data".format(
+                source=self._data_dir,
+                latest=self._latest_dir,
+                target=Path(
+                    backup_dir))
         DockerUtils.run_cmd(cmd=cmd, container=DockerContainer.BACKUP)
 
         # User data
         if not incremental:
             cmd = "fpsync -n 32 -o \"-a\" {source}/ {target}/user_data".format(source=self._user_data_dir,
-                                                                             target=Path(backup_dir))
+                                                                               target=Path(backup_dir))
         else:
             cmd = "fpsync -n 32 -o \"-a --link-dest {latest}/user_data\" {source}/ {target}/user_data".format(
                 source=self._user_data_dir,
@@ -141,13 +143,20 @@ class BackupManager(object):
             logger.error("User data backup directory {} empty.".format(data_backup_dir))
             raise
 
-        backup_size = get_folder_size_in_bytes(data_backup_dir, container=DockerContainer.BACKUP)
-        if backup_size == 0:
-            logger.error("Backup size: {}.".format(backup_size))
+        data_backup_size = get_folder_size_in_bytes(data_backup_dir, container=DockerContainer.BACKUP)
+        if data_backup_size == 0:
+            logger.error("Data backup size: {}.".format(data_backup_size))
             raise
 
-        backup_size_str = get_folder_size_human(data_backup_dir, container=DockerContainer.BACKUP)
-        logger.info("Backup successful verified in {}".format(backup_size_str))
+        user_data_backup_size = get_folder_size_in_bytes(user_data_backup_dir, container=DockerContainer.BACKUP)
+        if user_data_backup_size == 0:
+            logger.error("User data backup size: {}.".format(user_data_backup_size))
+            raise
+
+        data_backup_size_str = get_folder_size_human(data_backup_dir, container=DockerContainer.BACKUP)
+        user_backup_size_str = get_folder_size_human(user_data_backup_dir, container=DockerContainer.BACKUP)
+        logger.info("Backup successful verified. {} data,  {} user data".format(data_backup_size_str,
+                                                                                user_backup_size_str))
 
     def __verify_prior_restore(self, backup_dir: str):
         self.__verify_post_backup(backup_dir=backup_dir)
@@ -251,11 +260,9 @@ class BackupManager(object):
     def create_summary(self):
         nextcloud_data_size = get_folder_size_human(self._data_dir, container=DockerContainer.BACKUP)
         user_data_size = get_folder_size_human(self._user_data_dir, container=DockerContainer.BACKUP)
-        backup_size = get_folder_size_human(self._backup_dir, container=DockerContainer.BACKUP)
         dfh = get_df_output(self._data_dir, container=DockerContainer.BACKUP)
         logger.info("Current nextcloud data size: {data_size}".format(data_size=nextcloud_data_size))
         logger.info("Current user data size: {data_size}".format(data_size=user_data_size))
-        logger.info("Current backup size: {backup_size}".format(backup_size=backup_size))
         logger.info("{dfh}".format(dfh=dfh))
 
 
@@ -272,7 +279,7 @@ if __name__ == "__main__":
     parser.add_argument('-i', '--incremental', required=False,
                         help="Incremental backup.", action="store_true")
     parser.add_argument('-v', '--verbose', required=False,
-                        help="Increase verbosity backup.", action="store_true")
+                        help="Increase verbosity backup, but do not send mail.", action="store_true")
 
     args = parser.parse_args()
 
@@ -289,7 +296,7 @@ if __name__ == "__main__":
 
     init_params(PARAMS)
 
-    if str2bool(PARAMS['SEND_MAIL']):
+    if str2bool(PARAMS['SEND_MAIL']) and not args.verbose:
         init_mail(fromaddr=PARAMS['SMTP_FROM'], password=PARAMS['SMTP_PWD'], toaddrs=PARAMS['SMTP_TO'],
                   subject="DPV Cloud Backup", mailhost=PARAMS['SMTP_HOST'],
                   mailport=PARAMS['SMTP_PORT'])
