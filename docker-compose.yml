@@ -2,7 +2,7 @@ version: '3'
 
 services:
   db:
-    image: mariadb:latest
+    image: mariadb:10.5
     container_name: nextcloud_db
     command: --transaction-isolation=READ-COMMITTED --binlog-format=ROW
     restart: unless-stopped
