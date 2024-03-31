@@ -28,6 +28,7 @@ services:
   app:
     build: ./app
     container_name: nextcloud_app
+    hostname: ${VIRTUAL_HOST}
     restart: unless-stopped
     volumes:
       - nextcloud-data:/var/www/html
